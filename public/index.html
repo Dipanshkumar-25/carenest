@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CareNest | Clinic Management System</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%230E4A52'/><circle cx='50' cy='50' r='28' fill='none' stroke='%2321A99B' stroke-width='8'/><circle cx='50' cy='50' r='10' fill='%23F0B44C'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Sign in / sign up -->
+<main id="login-view" class="login">
+  <section class="login-hero">
+    <svg class="nest" viewBox="0 0 400 400" aria-hidden="true">
+      <circle cx="200" cy="200" r="190"/><circle cx="200" cy="200" r="150"/>
+      <circle cx="200" cy="200" r="110"/><circle cx="200" cy="200" r="70"/>
+      <circle class="egg" cx="200" cy="200" r="28"/>
+    </svg>
+    <div class="hero-copy">
+      <h1>CareNest</h1>
+      <p>One place for patients, appointments and visit history, so no follow-up gets missed.</p>
+      <ul class="hero-points">
+        <li>Book and track appointments</li>
+        <li>Full visit history for every patient</li>
+        <li>Secure sign-in with an email code</li>
+      </ul>
+    </div>
+    <div class="team-credit" id="login-team"></div>
+  </section>
+
+  <section class="login-panel">
+    <div class="auth-box">
+      <div class="tabs" id="auth-tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="login" class="active">Sign in</button>
+        <button role="tab" aria-selected="false" data-tab="register">Create account</button>
+      </div>
+
+      <form id="login-form" novalidate>
+        <h2>Welcome back</h2>
+        <p class="muted">Sign in with your email and password. We will email you a code to confirm it is you.</p>
+        <label>Email
+          <input type="email" name="email" autocomplete="username" required placeholder="you@example.com">
+        </label>
+        <label>Password
+          <input type="password" name="password" autocomplete="current-password" required placeholder="Your password">
+        </label>
+        <p class="form-error" id="login-error" role="alert"></p>
+        <button class="btn primary block" type="submit">Continue</button>
+        <div class="demo">
+          <strong>Demo accounts</strong>
+          <button type="button" data-fill="admin@carenest.com|Admin@123">Admin</button>
+          <button type="button" data-fill="doctor@carenest.com|Doctor@123">Doctor</button>
+          <button type="button" data-fill="reception@carenest.com|Desk@123">Receptionist</button>
+        </div>
+      </form>
+
+      <form id="register-form" hidden>
+        <h2>Create your account</h2>
+        <p class="muted">For patients. Book appointments and see your records online.</p>
+        <label>Full name
+          <input name="name" required minlength="2" autocomplete="name" placeholder="As on your ID">
+        </label>
+        <div class="grid-2">
+          <label>Age
+            <input name="age" type="number" min="0" max="120" required inputmode="numeric">
+          </label>
+          <label>Gender
+            <select name="gender" required><option value="">Choose</option><option>Male</option><option>Female</option><option>Other</option></select>
+          </label>
+        </div>
+        <label>Mobile number
+          <input name="phone" inputmode="numeric" pattern="\d{10}" maxlength="10" required title="Enter a 10 digit mobile number" autocomplete="tel" placeholder="10 digits">
+        </label>
+        <label>Email
+          <input name="email" type="email" required autocomplete="email" placeholder="Your sign-in code is sent here">
+        </label>
+        <label>Password
+          <input name="password" type="password" minlength="6" required autocomplete="new-password" placeholder="At least 6 characters">
+        </label>
+        <p class="form-error" id="register-error" role="alert"></p>
+        <button class="btn primary block" type="submit">Create account</button>
+      </form>
+
+      <form id="otp-form" hidden>
+        <h2>Check your email</h2>
+        <p class="muted" id="otp-msg"></p>
+        <label>6-digit code
+          <input name="code" class="otp-input" inputmode="numeric" maxlength="6" pattern="\d{6}" autocomplete="one-time-code" required placeholder="000000">
+        </label>
+        <p class="form-error" id="otp-error" role="alert"></p>
+        <button class="btn primary block" type="submit">Verify and sign in</button>
+        <div class="otp-links">
+          <button type="button" class="linkbtn" id="otp-resend">Resend code</button>
+          <button type="button" class="linkbtn" id="otp-back">Use a different account</button>
+        </div>
+      </form>
+    </div>
+  </section>
+</main>
+
+<!-- App -->
+<div id="app-view" class="app" hidden>
+  <header class="topbar">
+    <button class="menu-btn" id="menu-btn" aria-label="Open menu" aria-expanded="false">Menu</button>
+    <span class="brand-sm">CareNest</span>
+  </header>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <svg viewBox="0 0 100 100" width="34" height="34" aria-hidden="true"><circle cx="50" cy="50" r="46" fill="#21A99B"/><circle cx="50" cy="50" r="28" fill="none" stroke="#0E4A52" stroke-width="8"/><circle cx="50" cy="50" r="10" fill="#F0B44C"/></svg>
+      <span>CareNest</span>
+    </div>
+    <nav id="nav" aria-label="Main"></nav>
+    <div class="who">
+      <div class="avatar" id="who-avatar"></div>
+      <div><strong id="who-name"></strong><span id="who-role"></span></div>
+      <button class="btn ghost small" id="logout-btn">Sign out</button>
+    </div>
+  </aside>
+  <div class="main-col">
+    <main id="view" tabindex="-1"></main>
+    <footer class="app-footer" id="app-team"></footer>
+  </div>
+</div>
+
+<button class="theme-btn" id="theme-btn" aria-label="Switch between light and dark theme" title="Light / dark theme">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+</button>
+
+<!-- Heartbeat: always beating, bottom-right corner -->
+<div class="heartbeat" aria-hidden="true">
+  <svg class="ecg" viewBox="0 0 72 30" width="72" height="30" fill="none" stroke="#d95f52" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 15h20l4-9 6 20 5-11h7l3-4 3 4h24"/>
+  </svg>
+  <svg class="heart" viewBox="0 0 32 29" width="40" height="36">
+    <path fill="#e2564a" d="M23.6 0c-3 0-5.6 1.6-7.6 4.2C14 1.6 11.4 0 8.4 0 3.7 0 0 3.7 0 8.5c0 9.4 11.3 15.2 15.1 20 .5.6 1.3.6 1.8 0C20.700 23.700 32 17.900 32 8.500 32 3.700 28.300 0 23.600 0z"/>
+    <path fill="#fff" fill-opacity=".35" d="M7 4.500c-2 .5-3.300 2.200-3.300 4.300" stroke="#fff" stroke-opacity=".5" stroke-width="1.600" stroke-linecap="round"/>
+  </svg>
+</div>
+
+<div id="modal-root"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
