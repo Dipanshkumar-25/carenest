@@ -141,15 +141,17 @@ const mailer =
 const BREVO_KEY = process.env.BREVO_API_KEY || '';
 const MAIL_FROM = process.env.MAIL_FROM || process.env.SMTP_USER || '';
 
-async function sendOtp(to, name, code) {
+async function sendOtp(to, name, code, purpose = 'login') {
   const safeName = String(name).replace(/[<>&]/g, '');
-  const subject = 'Your CareNest verification code';
-  const text = `Hi ${safeName},\n\nYour CareNest verification code is ${code}.\nIt expires in 5 minutes. If you did not try to sign in, ignore this email.\n\nTeam KINGS`;
+  const isReset = purpose === 'reset';
+  const what = isReset ? 'reset your password' : 'finish signing in';
+  const subject = isReset ? 'Reset your CareNest password' : 'Your CareNest verification code';
+  const text = `Hi ${safeName},\n\nUse this code to ${what}: ${code}\nIt expires in 5 minutes. If this was not you, ignore this email.\n\nTeam KINGS`;
   const html = `<div style="font-family:Arial,sans-serif;max-width:420px;margin:auto;padding:24px;border:1px solid #d9e7e4;border-radius:12px">
           <h2 style="color:#0e4a52;margin:0 0 8px">CareNest</h2>
-          <p>Hi ${safeName}, use this code to finish signing in:</p>
+          <p>Hi ${safeName}, use this code to ${what}:</p>
           <p style="font-size:34px;letter-spacing:8px;font-weight:700;color:#0e4a52;margin:16px 0">${code}</p>
-          <p style="color:#5d7480;font-size:13px">It expires in 5 minutes. If you did not try to sign in, ignore this email.</p></div>`;
+          <p style="color:#5d7480;font-size:13px">It expires in 5 minutes. If this was not you, ignore this email.</p></div>`;
 
   if (BREVO_KEY && MAIL_FROM) {
     try {
@@ -213,6 +215,9 @@ app.post('/api/login', limitLogin, async (req, res) => {
   if (!isEmail(email) || !password) return fail(res, 'Enter a valid email and password.');
   const user = db.prepare('SELECT * FROM users WHERE email=?').get(email);
   if (!user || !bcrypt.compareSync(password, user.password)) return fail(res, 'Email or password is incorrect.', 401);
+  /* Each role signs in from its own tab. The tab sends its role; a mismatch is refused (checked only after the password is right). */
+  const role = str(req.body.role);
+  if (role && role !== user.role) return fail(res, `This account is not a ${role} account. Pick the correct login tab.`, 403);
   const { id, sent } = await issueChallenge(user);
   res.json({ otpRequired: true, challengeId: id, email: maskEmail(user.email), emailSent: sent });
 });
@@ -250,6 +255,76 @@ app.post('/api/login/resend', limitLogin, async (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id=?').get(ch.userId);
   const r = await issueChallenge(user, id);
   res.json({ emailSent: r.sent });
+});
+
+/* ---------- Forgot password: email -> code -> new password ---------- */
+const resets = new Map(); // id -> { userId|null, hash, expires, tries, lastSent, verified }
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, c] of resets) if (c.expires < now) resets.delete(id);
+}, 60 * 1000).unref();
+
+async function issueReset(user, existingId) {
+  const id = existingId || crypto.randomUUID();
+  const code = String(crypto.randomInt(100000, 1000000));
+  resets.set(id, { userId: user ? user.id : null, hash: sha(user ? code : crypto.randomUUID()), expires: Date.now() + OTP_TTL, tries: 0, lastSent: Date.now(), verified: false });
+  if (user) await sendOtp(user.email, user.name, code, 'reset');
+  return id;
+}
+
+/* Same answer whether or not the email has an account, so nobody can probe which emails exist */
+app.post('/api/forgot', limitLogin, async (req, res) => {
+  const email = str(req.body.email).toLowerCase();
+  const role = str(req.body.role);
+  if (!isEmail(email)) return fail(res, 'Enter a valid email address.');
+  let user = db.prepare('SELECT * FROM users WHERE email=?').get(email);
+  if (user && role && role !== user.role) user = null;
+  const id = await issueReset(user);
+  res.json({ challengeId: id, email: maskEmail(email) });
+});
+
+app.post('/api/forgot/resend', limitLogin, async (req, res) => {
+  const id = str(req.body.challengeId);
+  const ch = resets.get(id);
+  if (!ch || ch.verified) return fail(res, 'This session expired. Start again.', 401);
+  const wait = OTP_RESEND_WAIT - (Date.now() - ch.lastSent);
+  if (wait > 0) return fail(res, `Wait ${Math.ceil(wait / 1000)} seconds before asking for a new code.`, 429);
+  const user = ch.userId ? db.prepare('SELECT * FROM users WHERE id=?').get(ch.userId) : null;
+  await issueReset(user, id);
+  res.json({ ok: true });
+});
+
+app.post('/api/forgot/verify', limitLogin, (req, res) => {
+  const id = str(req.body.challengeId);
+  const code = str(req.body.code);
+  const ch = resets.get(id);
+  if (!ch || ch.expires < Date.now()) {
+    resets.delete(id);
+    return fail(res, 'This code has expired. Start again to get a new one.', 401);
+  }
+  if (!/^\d{6}$/.test(code)) return fail(res, 'Enter the 6-digit code.');
+  if (sha(code) !== ch.hash) {
+    ch.tries += 1;
+    if (ch.tries >= OTP_MAX_TRIES) {
+      resets.delete(id);
+      return fail(res, 'Too many wrong codes. Start again to get a new one.', 401);
+    }
+    return fail(res, `That code is wrong. ${OTP_MAX_TRIES - ch.tries} tries left.`, 401);
+  }
+  ch.verified = true;
+  ch.expires = Date.now() + 10 * 60 * 1000;
+  res.json({ ok: true });
+});
+
+app.post('/api/forgot/reset', limitLogin, (req, res) => {
+  const id = str(req.body.challengeId);
+  const password = typeof req.body.password === 'string' ? req.body.password : '';
+  const ch = resets.get(id);
+  if (!ch || !ch.verified || ch.expires < Date.now() || !ch.userId) return fail(res, 'This session expired. Start again.', 401);
+  if (password.length < 6) return fail(res, 'Password must be at least 6 characters.');
+  db.prepare('UPDATE users SET password=? WHERE id=?').run(bcrypt.hashSync(password, 10), ch.userId);
+  resets.delete(id);
+  res.json({ ok: true });
 });
 
 /* Patient sign-up */

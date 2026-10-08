@@ -7,19 +7,16 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%230E4A52'/><circle cx='50' cy='50' r='28' fill='none' stroke='%2321A99B' stroke-width='8'/><circle cx='50' cy='50' r='10' fill='%23F0B44C'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="theme.css">
 </head>
 <body>
+<canvas id="drape" aria-hidden="true"></canvas>
 
 <!-- Sign in / sign up -->
 <main id="login-view" class="login">
   <section class="login-hero">
-    <svg class="nest" viewBox="0 0 400 400" aria-hidden="true">
-      <circle cx="200" cy="200" r="190"/><circle cx="200" cy="200" r="150"/>
-      <circle cx="200" cy="200" r="110"/><circle cx="200" cy="200" r="70"/>
-      <circle class="egg" cx="200" cy="200" r="28"/>
-    </svg>
     <div class="hero-copy">
       <h1>CareNest</h1>
       <p>One place for patients, appointments and visit history, so no follow-up gets missed.</p>
@@ -41,7 +38,13 @@
 
       <form id="login-form" novalidate>
         <h2>Welcome back</h2>
-        <p class="muted">Sign in with your email and password. We will email you a code to confirm it is you.</p>
+        <p class="muted">Pick your role, then sign in. We will email you a code to confirm it is you.</p>
+        <div class="tabs roles" id="role-tabs" role="tablist">
+          <button type="button" role="tab" data-role="patient" class="active" aria-selected="true">Patient</button>
+          <button type="button" role="tab" data-role="doctor" aria-selected="false">Doctor</button>
+          <button type="button" role="tab" data-role="receptionist" aria-selected="false">Desk</button>
+          <button type="button" role="tab" data-role="admin" aria-selected="false">Admin</button>
+        </div>
         <label>Email
           <input type="email" name="email" autocomplete="username" required placeholder="you@example.com">
         </label>
@@ -50,12 +53,7 @@
         </label>
         <p class="form-error" id="login-error" role="alert"></p>
         <button class="btn primary block" type="submit">Continue</button>
-        <div class="demo">
-          <strong>Demo accounts</strong>
-          <button type="button" data-fill="admin@carenest.com|Admin@123">Admin</button>
-          <button type="button" data-fill="doctor@carenest.com|Doctor@123">Doctor</button>
-          <button type="button" data-fill="reception@carenest.com|Desk@123">Receptionist</button>
-        </div>
+        <div class="login-extra"><button type="button" class="linkbtn" id="forgot-link">Forgot password?</button></div>
       </form>
 
       <form id="register-form" hidden>
@@ -96,6 +94,34 @@
         <div class="otp-links">
           <button type="button" class="linkbtn" id="otp-resend">Resend code</button>
           <button type="button" class="linkbtn" id="otp-back">Use a different account</button>
+        </div>
+      </form>
+
+      <form id="forgot-form" hidden novalidate>
+        <h2>Reset your password</h2>
+        <p class="muted">Enter your account email. We will send a 6-digit code to it.</p>
+        <label>Email
+          <input type="email" name="email" autocomplete="username" required placeholder="you@example.com">
+        </label>
+        <p class="form-error" id="forgot-error" role="alert"></p>
+        <button class="btn primary block" type="submit">Send code</button>
+        <div class="otp-links"><button type="button" class="linkbtn" id="forgot-back">Back to sign in</button></div>
+      </form>
+
+      <form id="reset-form" hidden>
+        <h2>Set a new password</h2>
+        <p class="muted" id="reset-msg"></p>
+        <label>6-digit code
+          <input name="code" class="otp-input" inputmode="numeric" maxlength="6" pattern="\d{6}" autocomplete="one-time-code" required placeholder="000000">
+        </label>
+        <label>New password
+          <input name="password" type="password" minlength="6" required autocomplete="new-password" placeholder="At least 6 characters">
+        </label>
+        <p class="form-error" id="reset-error" role="alert"></p>
+        <button class="btn primary block" type="submit">Change password</button>
+        <div class="otp-links">
+          <button type="button" class="linkbtn" id="reset-resend">Resend code</button>
+          <button type="button" class="linkbtn" id="reset-back">Back to sign in</button>
         </div>
       </form>
     </div>
@@ -143,6 +169,7 @@
 
 <div id="modal-root"></div>
 <div id="toast" role="status" aria-live="polite"></div>
+<script src="drape.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

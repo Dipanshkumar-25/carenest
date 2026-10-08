@@ -110,14 +110,14 @@ function logout() {
 let challengeId = null;
 let resendTimer = null;
 function showAuth(which) {
-  ['login', 'register', 'otp'].forEach((n) => { $(`#${n}-form`).hidden = n !== which; });
-  $('#auth-tabs').hidden = which === 'otp';
+  ['login', 'register', 'otp', 'forgot', 'reset'].forEach((n) => { $(`#${n}-form`).hidden = n !== which; });
+  $('#auth-tabs').hidden = !['login', 'register'].includes(which);
   document.querySelectorAll('#auth-tabs button').forEach((b) => {
     const on = b.dataset.tab === which;
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', on);
   });
-  ['login-error', 'register-error', 'otp-error'].forEach((id) => { $('#' + id).textContent = ''; });
+  ['login-error', 'register-error', 'otp-error', 'forgot-error', 'reset-error'].forEach((id) => { $('#' + id).textContent = ''; });
 }
 document.querySelectorAll('#auth-tabs button').forEach((b) => b.addEventListener('click', () => showAuth(b.dataset.tab)));
 
@@ -150,6 +150,7 @@ $('#login-form').addEventListener('submit', async (e) => {
   const err = $('#login-error');
   err.textContent = '';
   const f = Object.fromEntries(new FormData(e.target));
+  f.role = loginRole;
   if (!f.email.trim() || !f.password) { err.textContent = 'Enter your email and password.'; return; }
   const btn = $('button[type=submit]', e.target);
   btn.disabled = true; btn.textContent = 'Sending code...';
@@ -181,6 +182,55 @@ $('#otp-resend').onclick = async () => {
   } catch (x) { $('#otp-error').textContent = x.message; }
 };
 $('#otp-back').onclick = () => { clearInterval(resendTimer); challengeId = null; showAuth('login'); };
+
+/* Role tabs: each role signs in from its own tab */
+let loginRole = 'patient';
+document.querySelectorAll('#role-tabs button').forEach((b) => b.addEventListener('click', () => {
+  loginRole = b.dataset.role;
+  document.querySelectorAll('#role-tabs button').forEach((x) => { x.classList.toggle('active', x === b); x.setAttribute('aria-selected', x === b); });
+}));
+
+/* Forgot password: email -> code + new password */
+let resetId = null;
+$('#forgot-link').onclick = () => { $('#forgot-form').email.value = $('#login-form').email.value; showAuth('forgot'); };
+$('#forgot-back').onclick = () => showAuth('login');
+$('#reset-back').onclick = () => { resetId = null; showAuth('login'); };
+$('#forgot-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = $('#forgot-error');
+  err.textContent = '';
+  const btn = $('button[type=submit]', e.target);
+  btn.disabled = true;
+  try {
+    const r = await api('/forgot', 'POST', { email: e.target.email.value });
+    resetId = r.challengeId;
+    $('#reset-msg').innerHTML = `If an account exists for <strong>${esc(r.email)}</strong>, we sent it a 6-digit code. It expires in 5 minutes.`;
+    $('#reset-form').reset();
+    showAuth('reset');
+    $('#reset-form').code.focus();
+  } catch (x) { err.textContent = x.message; }
+  finally { btn.disabled = false; }
+});
+$('#reset-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = $('#reset-error');
+  err.textContent = '';
+  const btn = $('button[type=submit]', e.target);
+  btn.disabled = true;
+  try {
+    await api('/forgot/verify', 'POST', { challengeId: resetId, code: e.target.code.value });
+    await api('/forgot/reset', 'POST', { challengeId: resetId, password: e.target.password.value });
+    toast('Password changed. Sign in with your new password.');
+    resetId = null;
+    showAuth('login');
+    $('#login-form').password.focus();
+  } catch (x) { err.textContent = x.message; }
+  finally { btn.disabled = false; }
+});
+$('#reset-resend').onclick = async () => {
+  try { await api('/forgot/resend', 'POST', { challengeId: resetId }); toast('New code sent'); }
+  catch (x) { $('#reset-error').textContent = x.message; }
+};
 
 /* Patient sign-up */
 $('#register-form').addEventListener('submit', async (e) => {
