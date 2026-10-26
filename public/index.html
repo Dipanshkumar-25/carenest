@@ -23,7 +23,7 @@
       <ul class="hero-points">
         <li>Book and track appointments</li>
         <li>Full visit history for every patient</li>
-        <li>Secure sign-in with an email code</li>
+        <li>Email-verified sign-up for patients and staff</li>
       </ul>
     </div>
     <div class="team-credit" id="login-team"></div>
@@ -38,7 +38,7 @@
 
       <form id="login-form" novalidate>
         <h2>Welcome back</h2>
-        <p class="muted">Pick your role, then sign in. We will email you a code to confirm it is you.</p>
+        <p class="muted">Pick your role, then sign in with your email and password.</p>
         <div class="tabs roles" id="role-tabs" role="tablist">
           <button type="button" role="tab" data-role="patient" class="active" aria-selected="true">Patient</button>
           <button type="button" role="tab" data-role="doctor" aria-selected="false">Doctor</button>
@@ -52,17 +52,24 @@
           <input type="password" name="password" autocomplete="current-password" required placeholder="Your password">
         </label>
         <p class="form-error" id="login-error" role="alert"></p>
-        <button class="btn primary block" type="submit">Continue</button>
+        <button class="btn primary block" type="submit">Sign in</button>
         <div class="login-extra"><button type="button" class="linkbtn" id="forgot-link">Forgot password?</button></div>
       </form>
 
       <form id="register-form" hidden>
         <h2>Create your account</h2>
-        <p class="muted">For patients. Book appointments and see your records online.</p>
+        <p class="muted">Choose your role and fill in your details. We will email a 6-digit code to confirm your email address.</p>
+        <label>I am a
+          <select name="role" id="reg-role" required>
+            <option value="patient">Patient</option>
+            <option value="doctor">Doctor</option>
+            <option value="receptionist">Receptionist</option>
+          </select>
+        </label>
         <label>Full name
           <input name="name" required minlength="2" autocomplete="name" placeholder="As on your ID">
         </label>
-        <div class="grid-2">
+        <div class="grid-2" id="reg-patient-fields">
           <label>Age
             <input name="age" type="number" min="0" max="120" required inputmode="numeric">
           </label>
@@ -70,17 +77,20 @@
             <select name="gender" required><option value="">Choose</option><option>Male</option><option>Female</option><option>Other</option></select>
           </label>
         </div>
+        <label id="reg-doctor-field" hidden>Specialization
+          <input name="specialization" maxlength="80" placeholder="For example: General Physician" disabled>
+        </label>
         <label>Mobile number
           <input name="phone" inputmode="numeric" pattern="\d{10}" maxlength="10" required title="Enter a 10 digit mobile number" autocomplete="tel" placeholder="10 digits">
         </label>
         <label>Email
-          <input name="email" type="email" required autocomplete="email" placeholder="Your sign-in code is sent here">
+          <input name="email" type="email" required autocomplete="email" placeholder="A verification code is sent here">
         </label>
         <label>Password
           <input name="password" type="password" minlength="6" required autocomplete="new-password" placeholder="At least 6 characters">
         </label>
         <p class="form-error" id="register-error" role="alert"></p>
-        <button class="btn primary block" type="submit">Create account</button>
+        <button class="btn primary block" type="submit">Send verification code</button>
       </form>
 
       <form id="otp-form" hidden>
@@ -90,10 +100,10 @@
           <input name="code" class="otp-input" inputmode="numeric" maxlength="6" pattern="\d{6}" autocomplete="one-time-code" required placeholder="000000">
         </label>
         <p class="form-error" id="otp-error" role="alert"></p>
-        <button class="btn primary block" type="submit">Verify and sign in</button>
+        <button class="btn primary block" type="submit">Verify and create account</button>
         <div class="otp-links">
           <button type="button" class="linkbtn" id="otp-resend">Resend code</button>
-          <button type="button" class="linkbtn" id="otp-back">Use a different account</button>
+          <button type="button" class="linkbtn" id="otp-back">Change my details</button>
         </div>
       </form>
 
