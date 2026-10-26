@@ -8,8 +8,8 @@ Built by team KINGS.
 
 ## What is new in this version
 
-- Two-step sign-in: password, then a 6-digit code sent by email (expires in 5 minutes, 5 tries, resend after 30 seconds)
-- Patient sign-up with full name, age, gender, mobile number, email and password
+- Sign-up with email verification: a 6-digit code is sent by email (expires in 5 minutes, 5 tries, resend after 30 seconds). Login is just email and password
+- Anyone can sign up as Patient, Doctor or Receptionist (admin is never offered at sign-up)
 - Patient portal: book and cancel own appointments, see own visit history
 - Always-beating heart in the bottom-right corner
 - Dark mode, menu icons, dashboard charts
