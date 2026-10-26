@@ -120,13 +120,8 @@ function limitLogin(req, res, next) {
 const OTP_TTL = 5 * 60 * 1000;
 const OTP_RESEND_WAIT = 30 * 1000;
 const OTP_MAX_TRIES = 5;
-const challenges = new Map(); // challengeId -> { userId, hash, expires, tries, lastSent }
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const maskEmail = (e) => e.replace(/^(.{1,2}).*(@.*)$/, '$1***$2');
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, c] of challenges) if (c.expires < now) challenges.delete(id);
-}, 60 * 1000).unref();
 
 const mailer =
   process.env.SMTP_USER && process.env.SMTP_PASS
@@ -144,8 +139,8 @@ const MAIL_FROM = process.env.MAIL_FROM || process.env.SMTP_USER || '';
 async function sendOtp(to, name, code, purpose = 'login') {
   const safeName = String(name).replace(/[<>&]/g, '');
   const isReset = purpose === 'reset';
-  const what = isReset ? 'reset your password' : 'finish signing in';
-  const subject = isReset ? 'Reset your CareNest password' : 'Your CareNest verification code';
+  const what = isReset ? 'reset your password' : 'verify your email and finish signing up';
+  const subject = isReset ? 'Reset your CareNest password' : 'Verify your email for CareNest';
   const text = `Hi ${safeName},\n\nUse this code to ${what}: ${code}\nIt expires in 5 minutes. If this was not you, ignore this email.\n\nTeam KINGS`;
   const html = `<div style="font-family:Arial,sans-serif;max-width:420px;margin:auto;padding:24px;border:1px solid #d9e7e4;border-radius:12px">
           <h2 style="color:#0e4a52;margin:0 0 8px">CareNest</h2>
@@ -183,14 +178,6 @@ async function sendOtp(to, name, code, purpose = 'login') {
   return false;
 }
 
-async function issueChallenge(user, existingId) {
-  const id = existingId || crypto.randomUUID();
-  const code = String(crypto.randomInt(100000, 1000000));
-  challenges.set(id, { userId: user.id, hash: sha(code), expires: Date.now() + OTP_TTL, tries: 0, lastSent: Date.now() });
-  const sent = await sendOtp(user.email, user.name, code);
-  return { id, sent };
-}
-
 /* ---------- Auth ---------- */
 function auth(req, res, next) {
   const header = req.headers.authorization || '';
@@ -208,8 +195,8 @@ function auth(req, res, next) {
 const allow = (...roles) => (req, res, next) =>
   roles.includes(req.user.role) ? next() : fail(res, 'You do not have permission to do this.', 403);
 
-/* Step 1: password check, then email a code */
-app.post('/api/login', limitLogin, async (req, res) => {
+/* Login: email + password only (no OTP). OTP is used only at sign-up and for forgot password. */
+app.post('/api/login', limitLogin, (req, res) => {
   const email = str(req.body.email).toLowerCase();
   const password = typeof req.body.password === 'string' ? req.body.password : '';
   if (!isEmail(email) || !password) return fail(res, 'Enter a valid email and password.');
@@ -218,43 +205,7 @@ app.post('/api/login', limitLogin, async (req, res) => {
   /* Each role signs in from its own tab. The tab sends its role; a mismatch is refused (checked only after the password is right). */
   const role = str(req.body.role);
   if (role && role !== user.role) return fail(res, `This account is not a ${role} account. Pick the correct login tab.`, 403);
-  const { id, sent } = await issueChallenge(user);
-  res.json({ otpRequired: true, challengeId: id, email: maskEmail(user.email), emailSent: sent });
-});
-
-/* Step 2: check the code */
-app.post('/api/login/verify', limitLogin, (req, res) => {
-  const id = str(req.body.challengeId);
-  const code = str(req.body.code);
-  const ch = challenges.get(id);
-  if (!ch || ch.expires < Date.now()) {
-    challenges.delete(id);
-    return fail(res, 'This code has expired. Sign in again to get a new one.', 401);
-  }
-  if (!/^\d{6}$/.test(code)) return fail(res, 'Enter the 6-digit code.');
-  if (sha(code) !== ch.hash) {
-    ch.tries += 1;
-    if (ch.tries >= OTP_MAX_TRIES) {
-      challenges.delete(id);
-      return fail(res, 'Too many wrong codes. Sign in again to get a new one.', 401);
-    }
-    return fail(res, `That code is wrong. ${OTP_MAX_TRIES - ch.tries} tries left.`, 401);
-  }
-  challenges.delete(id);
-  const user = db.prepare('SELECT * FROM users WHERE id=?').get(ch.userId);
-  if (!user) return fail(res, 'Account not found.', 401);
   res.json({ token: jwt.sign({ id: user.id }, SECRET, { expiresIn: '8h' }), user: publicUser(user) });
-});
-
-app.post('/api/login/resend', limitLogin, async (req, res) => {
-  const id = str(req.body.challengeId);
-  const ch = challenges.get(id);
-  if (!ch) return fail(res, 'This session expired. Sign in again.', 401);
-  const wait = OTP_RESEND_WAIT - (Date.now() - ch.lastSent);
-  if (wait > 0) return fail(res, `Wait ${Math.ceil(wait / 1000)} seconds before asking for a new code.`, 429);
-  const user = db.prepare('SELECT * FROM users WHERE id=?').get(ch.userId);
-  const r = await issueChallenge(user, id);
-  res.json({ emailSent: r.sent });
 });
 
 /* ---------- Forgot password: email -> code -> new password ---------- */
@@ -327,27 +278,99 @@ app.post('/api/forgot/reset', limitLogin, (req, res) => {
   res.json({ ok: true });
 });
 
-/* Patient sign-up */
-app.post('/api/register', limitLogin, (req, res) => {
+/* ---------- Sign-up: details -> email code -> account created ---------- */
+/* Anyone can sign up as a patient, doctor or receptionist. Admin is never offered here. */
+const SIGNUP_ROLES = ['patient', 'doctor', 'receptionist'];
+const signups = new Map(); // id -> { data, hash, expires, tries, lastSent }
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, c] of signups) if (c.expires < now) signups.delete(id);
+}, 60 * 1000).unref();
+
+async function issueSignupCode(id, rec) {
+  const code = String(crypto.randomInt(100000, 1000000));
+  rec.hash = sha(code);
+  rec.expires = Date.now() + OTP_TTL;
+  rec.tries = 0;
+  rec.lastSent = Date.now();
+  signups.set(id, rec);
+  return sendOtp(rec.data.email, rec.data.name, code, 'signup');
+}
+
+/* Step 1: validate the form, store it as pending, email a code. Nothing is saved to the database yet. */
+app.post('/api/register', limitLogin, async (req, res) => {
+  const role = str(req.body.role) || 'patient';
   const name = str(req.body.name);
-  const age = Number(req.body.age);
-  const gender = str(req.body.gender);
   const phone = str(req.body.phone);
   const email = str(req.body.email).toLowerCase();
   const password = typeof req.body.password === 'string' ? req.body.password : '';
+  if (!SIGNUP_ROLES.includes(role)) return fail(res, 'Choose Patient, Doctor or Receptionist.');
   if (name.length < 2) return fail(res, 'Enter your full name.');
-  if (!Number.isInteger(age) || age < 0 || age > 120) return fail(res, 'Age must be a whole number from 0 to 120.');
-  if (!['Male', 'Female', 'Other'].includes(gender)) return fail(res, 'Choose a gender.');
   if (!isPhone(phone)) return fail(res, 'Phone number must be 10 digits.');
-  if (!isEmail(email)) return fail(res, 'Enter a valid email address. Your sign-in code is sent there.');
+  if (!isEmail(email)) return fail(res, 'Enter a valid email address. Your verification code is sent there.');
   if (password.length < 6) return fail(res, 'Password must be at least 6 characters.');
+  const data = { role, name, phone, email, passwordHash: bcrypt.hashSync(password, 10), age: null, gender: '', specialization: '' };
+  if (role === 'patient') {
+    const age = Number(req.body.age);
+    const gender = str(req.body.gender);
+    if (!Number.isInteger(age) || age < 0 || age > 120) return fail(res, 'Age must be a whole number from 0 to 120.');
+    if (!['Male', 'Female', 'Other'].includes(gender)) return fail(res, 'Choose a gender.');
+    data.age = age;
+    data.gender = gender;
+  }
+  if (role === 'doctor') {
+    const specialization = str(req.body.specialization);
+    if (specialization.length < 2) return fail(res, 'Enter your specialization, for example General Physician.');
+    data.specialization = specialization.slice(0, 80);
+  }
   if (db.prepare('SELECT id FROM users WHERE email=?').get(email)) return fail(res, 'That email is already registered. Try signing in.', 409);
-  const create = db.transaction(() => {
-    const p = db.prepare('INSERT INTO patients(name,age,gender,phone) VALUES(?,?,?,?)').run(name, age, gender, phone);
-    db.prepare("INSERT INTO users(name,email,password,role,phone,patient_id) VALUES(?,?,?,'patient',?,?)")
-      .run(name, email, bcrypt.hashSync(password, 10), phone, p.lastInsertRowid);
-  });
-  create();
+  const id = crypto.randomUUID();
+  const sent = await issueSignupCode(id, { data });
+  res.json({ challengeId: id, email: maskEmail(email), emailSent: sent });
+});
+
+app.post('/api/register/resend', limitLogin, async (req, res) => {
+  const id = str(req.body.challengeId);
+  const rec = signups.get(id);
+  if (!rec) return fail(res, 'This session expired. Fill the sign-up form again.', 401);
+  const wait = OTP_RESEND_WAIT - (Date.now() - rec.lastSent);
+  if (wait > 0) return fail(res, `Wait ${Math.ceil(wait / 1000)} seconds before asking for a new code.`, 429);
+  const sent = await issueSignupCode(id, rec);
+  res.json({ emailSent: sent });
+});
+
+/* Step 2: check the code, then create the account */
+app.post('/api/register/verify', limitLogin, (req, res) => {
+  const id = str(req.body.challengeId);
+  const code = str(req.body.code);
+  const rec = signups.get(id);
+  if (!rec || rec.expires < Date.now()) {
+    signups.delete(id);
+    return fail(res, 'This code has expired. Fill the sign-up form again.', 401);
+  }
+  if (!/^\d{6}$/.test(code)) return fail(res, 'Enter the 6-digit code.');
+  if (sha(code) !== rec.hash) {
+    rec.tries += 1;
+    if (rec.tries >= OTP_MAX_TRIES) {
+      signups.delete(id);
+      return fail(res, 'Too many wrong codes. Fill the sign-up form again.', 401);
+    }
+    return fail(res, `That code is wrong. ${OTP_MAX_TRIES - rec.tries} tries left.`, 401);
+  }
+  const d = rec.data;
+  if (db.prepare('SELECT id FROM users WHERE email=?').get(d.email)) {
+    signups.delete(id);
+    return fail(res, 'That email is already registered. Try signing in.', 409);
+  }
+  db.transaction(() => {
+    let patientId = null;
+    if (d.role === 'patient') {
+      patientId = db.prepare('INSERT INTO patients(name,age,gender,phone) VALUES(?,?,?,?)').run(d.name, d.age, d.gender, d.phone).lastInsertRowid;
+    }
+    db.prepare('INSERT INTO users(name,email,password,role,phone,specialization,patient_id) VALUES(?,?,?,?,?,?,?)')
+      .run(d.name, d.email, d.passwordHash, d.role, d.phone, d.specialization, patientId);
+  })();
+  signups.delete(id);
   res.status(201).json({ ok: true });
 });
 
