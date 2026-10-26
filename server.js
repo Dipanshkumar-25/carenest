@@ -281,6 +281,7 @@ app.post('/api/forgot/reset', limitLogin, (req, res) => {
 /* ---------- Sign-up: details -> email code -> account created ---------- */
 /* Anyone can sign up as a patient, doctor or receptionist. Admin is never offered here. */
 const SIGNUP_ROLES = ['patient', 'doctor', 'receptionist'];
+const SPECIALIZATIONS = ['General Physician', 'Pediatrician', 'Gynecologist', 'Cardiologist', 'Dermatologist', 'Orthopedic', 'ENT Specialist', 'Dentist', 'Neurologist', 'Psychiatrist', 'Ophthalmologist', 'Pulmonologist', 'Gastroenterologist', 'Urologist', 'Diabetologist', 'Other'];
 const signups = new Map(); // id -> { data, hash, expires, tries, lastSent }
 setInterval(() => {
   const now = Date.now();
@@ -320,8 +321,8 @@ app.post('/api/register', limitLogin, async (req, res) => {
   }
   if (role === 'doctor') {
     const specialization = str(req.body.specialization);
-    if (specialization.length < 2) return fail(res, 'Enter your specialization, for example General Physician.');
-    data.specialization = specialization.slice(0, 80);
+    if (!SPECIALIZATIONS.includes(specialization)) return fail(res, 'Choose your specialization from the list.');
+    data.specialization = specialization;
   }
   if (db.prepare('SELECT id FROM users WHERE email=?').get(email)) return fail(res, 'That email is already registered. Try signing in.', 409);
   const id = crypto.randomUUID();
@@ -413,6 +414,7 @@ app.post('/api/users', auth, allow('admin'), (req, res) => {
   if (!['admin', 'doctor', 'receptionist'].includes(role)) return fail(res, 'Choose a valid role.');
   if (password.length < 6) return fail(res, 'Password must be at least 6 characters.');
   if (phone && !isPhone(phone)) return fail(res, 'Phone number must be 10 digits.');
+  if (role === 'doctor' && !SPECIALIZATIONS.includes(specialization)) return fail(res, 'Choose the specialization from the list.');
   if (db.prepare('SELECT id FROM users WHERE email=?').get(email)) return fail(res, 'That email is already registered.', 409);
   const info = db
     .prepare('INSERT INTO users(name,email,password,role,phone,specialization) VALUES(?,?,?,?,?,?)')
