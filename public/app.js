@@ -137,14 +137,14 @@ function startResendCountdown() {
 function showOtp(r) {
   challengeId = r.challengeId;
   $('#otp-msg').innerHTML = `We sent a 6-digit code to <strong>${esc(r.email)}</strong>. It expires in 5 minutes.` +
-    (r.emailSent ? '' : '<span class="note" style="display:block;margin-top:.6rem">The email could not be sent. Ask the person running the server to check the email settings, or read the code in the server terminal.</span>');
+    (r.emailSent ? '' : '<span class="note" style="display:block;margin-top:.6rem">The email could not be sent. Ask the person running the server to check the email settings.</span>');
   $('#otp-form').reset();
   showAuth('otp');
   $('#otp-form').code.focus();
   startResendCountdown();
 }
 
-/* Step 1: email + password */
+/* Sign in: email + password only. The email code is used only when creating an account. */
 $('#login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = $('#login-error');
@@ -153,42 +153,59 @@ $('#login-form').addEventListener('submit', async (e) => {
   f.role = loginRole;
   if (!f.email.trim() || !f.password) { err.textContent = 'Enter your email and password.'; return; }
   const btn = $('button[type=submit]', e.target);
-  btn.disabled = true; btn.textContent = 'Sending code...';
-  try { showOtp(await api('/login', 'POST', f)); }
-  catch (x) { err.textContent = x.message; }
-  finally { btn.disabled = false; btn.textContent = 'Continue'; }
+  btn.disabled = true; btn.textContent = 'Signing in...';
+  try {
+    const r = await api('/login', 'POST', f);
+    token = r.token; me = r.user;
+    localStorage.setItem('cn_token', token);
+    $('#login-form').reset();
+    showApp();
+  } catch (x) { err.textContent = x.message; }
+  finally { btn.disabled = false; btn.textContent = 'Sign in'; }
 });
 
-/* Step 2: the code */
+/* Sign-up step 2: the email code, then the account is created */
+let pendingSignup = null;
+function setLoginRole(role) {
+  loginRole = role;
+  document.querySelectorAll('#role-tabs button').forEach((x) => {
+    const on = x.dataset.role === role;
+    x.classList.toggle('active', on);
+    x.setAttribute('aria-selected', on);
+  });
+}
 $('#otp-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = $('#otp-error');
   err.textContent = '';
+  const btn = $('button[type=submit]', e.target);
+  btn.disabled = true;
   try {
-    const r = await api('/login/verify', 'POST', { challengeId, code: e.target.code.value });
-    token = r.token; me = r.user;
-    localStorage.setItem('cn_token', token);
+    await api('/register/verify', 'POST', { challengeId, code: e.target.code.value });
     clearInterval(resendTimer);
-    $('#login-form').reset();
+    toast('Email verified. Account created. Sign in to continue.');
     showAuth('login');
-    showApp();
+    if (pendingSignup) {
+      setLoginRole(pendingSignup.role);
+      $('#login-form').email.value = pendingSignup.email;
+      $('#login-form').password.focus();
+    }
+    pendingSignup = null; challengeId = null;
   } catch (x) { err.textContent = x.message; }
+  finally { btn.disabled = false; }
 });
 $('#otp-resend').onclick = async () => {
   try {
-    const r = await api('/login/resend', 'POST', { challengeId });
+    const r = await api('/register/resend', 'POST', { challengeId });
     toast(r.emailSent ? 'New code sent' : 'Code generated. Email could not be sent.', r.emailSent ? '' : 'error');
     startResendCountdown();
   } catch (x) { $('#otp-error').textContent = x.message; }
 };
-$('#otp-back').onclick = () => { clearInterval(resendTimer); challengeId = null; showAuth('login'); };
+$('#otp-back').onclick = () => { clearInterval(resendTimer); challengeId = null; showAuth('register'); };
 
 /* Role tabs: each role signs in from its own tab */
 let loginRole = 'patient';
-document.querySelectorAll('#role-tabs button').forEach((b) => b.addEventListener('click', () => {
-  loginRole = b.dataset.role;
-  document.querySelectorAll('#role-tabs button').forEach((x) => { x.classList.toggle('active', x === b); x.setAttribute('aria-selected', x === b); });
-}));
+document.querySelectorAll('#role-tabs button').forEach((b) => b.addEventListener('click', () => setLoginRole(b.dataset.role)));
 
 /* Forgot password: email -> code + new password */
 let resetId = null;
@@ -232,23 +249,31 @@ $('#reset-resend').onclick = async () => {
   catch (x) { $('#reset-error').textContent = x.message; }
 };
 
-/* Patient sign-up */
+/* Sign-up step 1: details -> email code. Patients, doctors and receptionists can all sign up. */
+function syncRegisterRole() {
+  const role = $('#reg-role').value;
+  const patient = $('#reg-patient-fields'), doctor = $('#reg-doctor-field');
+  patient.hidden = role !== 'patient';
+  doctor.hidden = role !== 'doctor';
+  patient.querySelectorAll('input,select').forEach((el) => { el.disabled = role !== 'patient'; el.required = role === 'patient'; });
+  doctor.querySelectorAll('input').forEach((el) => { el.disabled = role !== 'doctor'; el.required = role === 'doctor'; });
+}
+$('#reg-role').addEventListener('change', syncRegisterRole);
+syncRegisterRole();
+
 $('#register-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const err = $('#register-error');
   err.textContent = '';
   const f = Object.fromEntries(new FormData(e.target));
   const btn = $('button[type=submit]', e.target);
-  btn.disabled = true;
+  btn.disabled = true; btn.textContent = 'Sending code...';
   try {
-    await api('/register', 'POST', f);
-    toast('Account created. Sign in to continue.');
-    e.target.reset();
-    showAuth('login');
-    $('#login-form').email.value = f.email;
-    $('#login-form').password.focus();
+    const r = await api('/register', 'POST', f);
+    pendingSignup = { email: f.email.trim().toLowerCase(), role: f.role };
+    showOtp(r);
   } catch (x) { err.textContent = x.message; }
-  finally { btn.disabled = false; }
+  finally { btn.disabled = false; btn.textContent = 'Send verification code'; }
 });
 
 /* Light / dark theme */
