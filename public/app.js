@@ -8,6 +8,9 @@ const TEAM = {
   ],
 };
 
+const SPECIALIZATIONS = ['General Physician', 'Pediatrician', 'Gynecologist', 'Cardiologist', 'Dermatologist', 'Orthopedic', 'ENT Specialist', 'Dentist', 'Neurologist', 'Psychiatrist', 'Ophthalmologist', 'Pulmonologist', 'Gastroenterologist', 'Urologist', 'Diabetologist', 'Other'];
+const specOptions = () => SPECIALIZATIONS.map((x) => `<option>${x}</option>`).join('');
+
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -256,8 +259,9 @@ function syncRegisterRole() {
   patient.hidden = role !== 'patient';
   doctor.hidden = role !== 'doctor';
   patient.querySelectorAll('input,select').forEach((el) => { el.disabled = role !== 'patient'; el.required = role === 'patient'; });
-  doctor.querySelectorAll('input').forEach((el) => { el.disabled = role !== 'doctor'; el.required = role === 'doctor'; });
+  doctor.querySelectorAll('input,select').forEach((el) => { el.disabled = role !== 'doctor'; el.required = role === 'doctor'; });
 }
+$('#reg-spec').insertAdjacentHTML('beforeend', specOptions());
 $('#reg-role').addEventListener('change', syncRegisterRole);
 syncRegisterRole();
 
@@ -619,13 +623,18 @@ routes.staff = async function () {
         <label>Role<select name="role" id="u-role" required><option value="doctor">Doctor</option><option value="receptionist">Receptionist</option><option value="admin">Admin</option></select></label>
         <label>Phone<input name="phone" inputmode="numeric" pattern="\\d{10}" maxlength="10" title="Enter a 10 digit phone number"></label>
       </div>
-      <label id="u-spec">Specialization<input name="specialization" placeholder="For example: Dentist"></label>
+      <label id="u-spec">Specialization<select name="specialization" required><option value="">Choose</option>${specOptions()}</select></label>
       <label>Temporary password<input name="password" type="password" minlength="6" required autocomplete="new-password"></label>
       <p class="form-error" role="alert"></p>
       <div class="modal-actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Add staff member</button></div>
     </form>`);
     const role = $('#u-role', m);
-    role.onchange = () => { $('#u-spec', m).hidden = role.value !== 'doctor'; };
+    role.onchange = () => {
+      const isDoc = role.value === 'doctor';
+      $('#u-spec', m).hidden = !isDoc;
+      const sel = $('#u-spec select', m);
+      sel.disabled = !isDoc; sel.required = isDoc;
+    };
     bindForm(m, async (data) => {
       await api('/users', 'POST', data);
       toast('Staff member added');
